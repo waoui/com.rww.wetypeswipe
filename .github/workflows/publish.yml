@@ -12,7 +12,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: publish-22-1.10.0
+  group: publish-38-1.11.0
   cancel-in-progress: false
 
 jobs:
@@ -20,11 +20,11 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SOURCE_REPO: waoui/WeType-Swipe
-      SOURCE_TAG: v1.10.0
-      VERSION_CODE: "22"
-      VERSION_NAME: "1.10.0"
-      APK_NAME: WeType_Swipe_LSPosed_v1.10.0.apk
-      SUMS_NAME: WeType_Swipe_LSPosed_v1.10.0_SHA256SUMS.txt
+      SOURCE_TAG: v1.11.0
+      VERSION_CODE: "38"
+      VERSION_NAME: "1.11.0"
+      APK_NAME: WeType_Swipe_LSPosed_v1.11.0.apk
+      SUMS_NAME: WeType_Swipe_v1.11.0_SHA256SUMS.txt
       GH_TOKEN: ${{ github.token }}
 
     steps:
@@ -55,17 +55,25 @@ jobs:
           cat > release-notes.md <<'EOF'
           ### 新增功能
 
-          - 新增“剪贴板”下滑动作，直接打开微信输入法原生剪贴板历史。
-          - 新增“快捷发送”下滑动作，直接打开原生快捷发送／常用语面板。
-          - 两项功能无需在输入法工具栏中显示对应按钮。
-          - 支持竖屏、横屏及横屏悬浮键盘模式。
+          - 在 26 键和九宫格键帽底部显示已绑定的下滑功能。
+          - 新增“显示按键底部功能文字”开关。
+          - 新增“显示下滑触发提示”开关，可独立控制下滑预览和执行成功提示。
+          - “选至段首”和“选至段尾”的键帽短标签调整为“选前”和“选后”。
 
-          ### 性能与稳定性
+          ### 显示与布局
 
-          - 优化普通按键过程中的工具栏解析。
-          - 缓存原生工具栏命令载体和反射成员。
-          - 优化键位识别热路径与窗口切换后的缓存恢复。
-          - 减少正常输入和成功触发时的日志写入。
+          - 接入微信输入法原生单键绘制链，使用实时键帽坐标定位。
+          - 自动适配普通键盘、分离键盘、悬浮键盘、横竖屏和键盘缩放。
+          - 26 键与九宫格均使用原生键帽坐标。
+          - 深色与浅色模式自动使用高对比文字。
+          - 根据键帽高度自适应字号与基线。
+
+          ### 性能优化
+
+          - 移除周期性布局检查、触摸扫描和行列拟合的正常路径。
+          - 缓存按键模型与显示文字，避免重复解析和查询配置。
+          - 未绑定按键快速返回；关闭功能文字后提前退出。
+          - 仅对已绑定且开启显示的按键增加一次文字绘制。
           EOF
 
       - name: 创建或更新模块 Release
