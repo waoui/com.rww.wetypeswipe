@@ -1,0 +1,89 @@
+name: 发布模块版本
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: publish-22-1.10.0
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    env:
+      SOURCE_REPO: waoui/WeType-Swipe
+      SOURCE_TAG: v1.10.0
+      VERSION_CODE: "22"
+      VERSION_NAME: "1.10.0"
+      APK_NAME: WeType_Swipe_LSPosed_v1.10.0.apk
+      SUMS_NAME: WeType_Swipe_LSPosed_v1.10.0_SHA256SUMS.txt
+      GH_TOKEN: ${{ github.token }}
+
+    steps:
+      - name: 检出模块仓库
+        uses: actions/checkout@v4
+
+      - name: 下载并校验正式 APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          BASE_URL="https://github.com/${SOURCE_REPO}/releases/download/${SOURCE_TAG}"
+          curl --fail --location --retry 3 \
+            "${BASE_URL}/${APK_NAME}" \
+            --output "release/${APK_NAME}"
+          curl --fail --location --retry 3 \
+            "${BASE_URL}/${SUMS_NAME}" \
+            --output "release/${SUMS_NAME}"
+
+          cd release
+          EXPECTED="$(awk -v file="${APK_NAME}" '$2 == file { print $1 }' "${SUMS_NAME}")"
+          test -n "${EXPECTED}"
+          printf '%s  %s\n' "${EXPECTED}" "${APK_NAME}" | sha256sum --check -
+
+      - name: 生成更新说明
+        shell: bash
+        run: |
+          cat > release-notes.md <<'EOF'
+          ### 新增功能
+
+          - 新增“剪贴板”下滑动作，直接打开微信输入法原生剪贴板历史。
+          - 新增“快捷发送”下滑动作，直接打开原生快捷发送／常用语面板。
+          - 两项功能无需在输入法工具栏中显示对应按钮。
+          - 支持竖屏、横屏及横屏悬浮键盘模式。
+
+          ### 性能与稳定性
+
+          - 优化普通按键过程中的工具栏解析。
+          - 缓存原生工具栏命令载体和反射成员。
+          - 优化键位识别热路径与窗口切换后的缓存恢复。
+          - 减少正常输入和成功触发时的日志写入。
+          EOF
+
+      - name: 创建或更新模块 Release
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${VERSION_CODE}-${VERSION_NAME}"
+          APK="release/${APK_NAME}"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${APK}" --clobber
+            gh release edit "${TAG}" \
+              --title "${VERSION_NAME}" \
+              --notes-file release-notes.md \
+              --latest
+          else
+            gh release create "${TAG}" "${APK}" \
+              --title "${VERSION_NAME}" \
+              --notes-file release-notes.md \
+              --latest
+          fi
