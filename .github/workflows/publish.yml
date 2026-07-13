@@ -1,6 +1,11 @@
 name: 同步正式版到 LSPosed 官方仓库
 
 on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/publish.yml"
   workflow_dispatch:
   schedule:
     - cron: "*/15 * * * *"
