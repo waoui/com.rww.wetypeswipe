@@ -81,6 +81,21 @@ jobs:
             echo "exists=false" >> "${GITHUB_OUTPUT}"
           fi
 
+      - name: 重新触发官方仓库索引
+        if: steps.existing.outputs.exists == 'true' && github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "${SOURCE_TAG}" \
+            --repo "${SOURCE_REPO}" \
+            --json body \
+            --jq '.body' > release-notes.md
+          gh release edit "${TAG}" \
+            --repo "${TARGET_REPO}" \
+            --title "${VERSION_NAME}" \
+            --notes-file release-notes.md \
+            --latest
+
       - name: 下载并校验正式 APK
         if: steps.existing.outputs.exists != 'true'
         shell: bash
