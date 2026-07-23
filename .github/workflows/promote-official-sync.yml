@@ -1,0 +1,96 @@
+name: 合并官方仓库自动同步升级
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".github/workflows/promote-official-sync.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      OFFICIAL_REPO: Xposed-Modules-Repo/com.rww.wetypeswipe
+      HEAD_REF: waoui:sync/official-self-updater
+      GH_TOKEN: ${{ secrets.OFFICIAL_REPO_TOKEN }}
+
+    steps:
+      - name: 检出个人同步仓库
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: 检查官方仓库凭证
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "${GH_TOKEN}"
+          gh auth status
+
+      - name: 创建或查找官方 PR
+        id: pr
+        shell: bash
+        run: |
+          set -euo pipefail
+          number="$(gh pr list \
+            --repo "${OFFICIAL_REPO}" \
+            --state open \
+            --head "${HEAD_REF}" \
+            --json number \
+            --jq '.[0].number // empty')"
+
+          if [[ -z "${number}" ]]; then
+            cat > /tmp/pr-body.md <<'EOF'
+          ## 目标
+
+          将 LSPosed 官方模块仓库从固定版本发布脚本升级为长期自动同步机制，并同步当前 v1.11.3 的功能说明。
+
+          ## 自动同步规则
+
+          - 每 15 分钟检查 `waoui/WeType-Swipe` 最新正式 Release。
+          - 仅接受非 Draft、非 Prerelease 的 `vX.Y.Z` 版本。
+          - 从对应 Tag 的 `gradle.properties` 读取并校验版本号。
+          - 下载正式 APK 和 SHA-256 文件并校验。
+          - 按 `VERSION_CODE-VERSION_NAME` 创建 LSPosed Release。
+          - 已存在版本保持幂等，不重复发布。
+          - 使用官方仓库自身 `GITHUB_TOKEN`，不依赖个人 PAT。
+
+          README 同步补充 v1.11.3 功能、微信输入法 3.5.2 兼容信息及版本同步规则。
+          EOF
+
+            url="$(gh pr create \
+              --repo "${OFFICIAL_REPO}" \
+              --base main \
+              --head "${HEAD_REF}" \
+              --title "自动同步 WeType-Swipe 正式版并更新模块说明" \
+              --body-file /tmp/pr-body.md)"
+            number="${url##*/}"
+          fi
+
+          echo "number=${number}" >> "${GITHUB_OUTPUT}"
+
+      - name: 合并官方 PR
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr merge "${{ steps.pr.outputs.number }}" \
+            --repo "${OFFICIAL_REPO}" \
+            --squash \
+            --admin
+
+      - name: 清理一次性工作流
+        if: success()
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/promote-official-sync.yml
+          git commit -m "清理官方仓库同步升级任务"
+          git push origin HEAD:main
