@@ -79,10 +79,13 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh pr merge "${{ steps.pr.outputs.number }}" \
-            --repo "${OFFICIAL_REPO}" \
-            --squash \
-            --admin
+          response="$(gh api \
+            --method PUT \
+            "repos/${OFFICIAL_REPO}/pulls/${{ steps.pr.outputs.number }}/merge" \
+            -f merge_method=squash \
+            -f commit_title='自动同步 WeType-Swipe 正式版并更新模块说明' \
+            -f commit_message='每15分钟同步源仓库正式 Release，并更新 v1.11.3 模块说明。')"
+          test "$(jq -r '.merged' <<<"${response}")" = "true"
 
       - name: 清理一次性工作流
         if: success()
