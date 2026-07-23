@@ -1,20 +1,20 @@
-name: 同步正式版到 LSPosed 官方仓库
+name: 自动同步 WeType-Swipe 正式版
 
 on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
   push:
     branches:
       - main
     paths:
       - ".github/workflows/publish.yml"
-  workflow_dispatch:
-  schedule:
-    - cron: "*/15 * * * *"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
-  group: sync-lsposed-official-release
+  group: sync-wetype-latest-release
   cancel-in-progress: false
 
 jobs:
@@ -23,16 +23,9 @@ jobs:
     timeout-minutes: 15
     env:
       SOURCE_REPO: waoui/WeType-Swipe
-      TARGET_REPO: Xposed-Modules-Repo/com.rww.wetypeswipe
-      GH_TOKEN: ${{ secrets.OFFICIAL_REPO_TOKEN }}
+      GH_TOKEN: ${{ github.token }}
 
     steps:
-      - name: 检查发布凭证
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -n "${GH_TOKEN}"
-
       - name: 读取源码仓库最新正式版
         shell: bash
         run: |
@@ -78,33 +71,17 @@ jobs:
             echo "SUMS_NAME=${SUMS_NAME}"
           } >> "${GITHUB_ENV}"
 
-      - name: 检查官方版本是否已经存在
+      - name: 检查是否已经同步
         id: existing
         shell: bash
         run: |
           set -euo pipefail
-          if gh release view "${TAG}" --repo "${TARGET_REPO}" >/dev/null 2>&1; then
+          if gh release view "${TAG}" >/dev/null 2>&1; then
             echo "exists=true" >> "${GITHUB_OUTPUT}"
-            echo "官方 Release ${TAG} 已存在，无需重复发布。"
+            echo "Release ${TAG} 已存在，无需重复发布。"
           else
             echo "exists=false" >> "${GITHUB_OUTPUT}"
           fi
-
-      - name: 重新触发官方仓库索引
-        if: steps.existing.outputs.exists == 'true' && github.event_name == 'push'
-        shell: bash
-        run: |
-          set -euo pipefail
-          gh release view "${SOURCE_TAG}" \
-            --repo "${SOURCE_REPO}" \
-            --json body \
-            --jq '.body' > release-notes.md
-          test -s release-notes.md
-          gh release edit "${TAG}" \
-            --repo "${TARGET_REPO}" \
-            --title "${VERSION_NAME}" \
-            --notes-file release-notes.md \
-            --latest
 
       - name: 下载并校验正式 APK
         if: steps.existing.outputs.exists != 'true'
@@ -142,14 +119,28 @@ jobs:
             --jq '.body' > release-notes.md
           test -s release-notes.md
 
-      - name: 发布到 LSPosed 官方仓库
+      - name: 发布到 LSPosed 模块仓库
         if: steps.existing.outputs.exists != 'true'
         shell: bash
         run: |
           set -euo pipefail
           gh release create "${TAG}" "release/${APK_NAME}" \
-            --repo "${TARGET_REPO}" \
             --target main \
+            --title "${VERSION_NAME}" \
+            --notes-file release-notes.md \
+            --latest
+
+      - name: 刷新现有版本的 Latest 状态
+        if: steps.existing.outputs.exists == 'true' && github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release view "${SOURCE_TAG}" \
+            --repo "${SOURCE_REPO}" \
+            --json body \
+            --jq '.body' > release-notes.md
+          test -s release-notes.md
+          gh release edit "${TAG}" \
             --title "${VERSION_NAME}" \
             --notes-file release-notes.md \
             --latest
