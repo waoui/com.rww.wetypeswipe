@@ -20,6 +20,7 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     env:
       SOURCE_REPO: waoui/WeType-Swipe
       TARGET_REPO: Xposed-Modules-Repo/com.rww.wetypeswipe
@@ -37,19 +38,26 @@ jobs:
         run: |
           set -euo pipefail
 
-          SOURCE_TAG="$(gh api "repos/${SOURCE_REPO}/releases/latest" --jq '.tag_name')"
-          VERSION_NAME="${SOURCE_TAG#v}"
+          RELEASE_JSON="$(gh api "repos/${SOURCE_REPO}/releases/latest")"
+          SOURCE_TAG="$(jq -r '.tag_name' <<<"${RELEASE_JSON}")"
+          IS_DRAFT="$(jq -r '.draft' <<<"${RELEASE_JSON}")"
+          IS_PRERELEASE="$(jq -r '.prerelease' <<<"${RELEASE_JSON}")"
 
-          GRADLE_FILE="$(curl --fail --location --retry 3 \
-            "https://raw.githubusercontent.com/${SOURCE_REPO}/${SOURCE_TAG}/app/build.gradle.kts")"
-          VERSION_CODE="$(printf '%s\n' "${GRADLE_FILE}" |
-            sed -n 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' |
+          test "${IS_DRAFT}" = "false"
+          test "${IS_PRERELEASE}" = "false"
+          [[ "${SOURCE_TAG}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]
+          VERSION_NAME="${BASH_REMATCH[1]}"
+
+          PROPERTIES="$(curl --fail --location --retry 3 \
+            "https://raw.githubusercontent.com/${SOURCE_REPO}/${SOURCE_TAG}/gradle.properties")"
+          VERSION_CODE="$(printf '%s\n' "${PROPERTIES}" |
+            sed -n 's/^VERSION_CODE=\([0-9][0-9]*\)$/\1/p' |
             head -n 1)"
-          DECLARED_NAME="$(printf '%s\n' "${GRADLE_FILE}" |
-            sed -n 's/^[[:space:]]*versionName[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' |
+          DECLARED_NAME="$(printf '%s\n' "${PROPERTIES}" |
+            sed -n 's/^VERSION_NAME=\(.*\)$/\1/p' |
+            tr -d '\r' |
             head -n 1)"
 
-          test -n "${SOURCE_TAG}"
           test -n "${VERSION_CODE}"
           test "${VERSION_NAME}" = "${DECLARED_NAME}"
 
@@ -74,6 +82,7 @@ jobs:
         id: existing
         shell: bash
         run: |
+          set -euo pipefail
           if gh release view "${TAG}" --repo "${TARGET_REPO}" >/dev/null 2>&1; then
             echo "exists=true" >> "${GITHUB_OUTPUT}"
             echo "官方 Release ${TAG} 已存在，无需重复发布。"
@@ -90,6 +99,7 @@ jobs:
             --repo "${SOURCE_REPO}" \
             --json body \
             --jq '.body' > release-notes.md
+          test -s release-notes.md
           gh release edit "${TAG}" \
             --repo "${TARGET_REPO}" \
             --title "${VERSION_NAME}" \
@@ -112,6 +122,9 @@ jobs:
             --repo "${SOURCE_REPO}" \
             --dir release \
             --pattern "${SUMS_NAME}"
+
+          test -s "release/${APK_NAME}"
+          test -s "release/${SUMS_NAME}"
 
           cd release
           EXPECTED="$(awk -v file="${APK_NAME}" '$2 == file { print $1 }' "${SUMS_NAME}")"
