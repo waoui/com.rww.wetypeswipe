@@ -1,4 +1,4 @@
-# 手动触发：v1.11.4 versionCode 43 正式版立即同步
+# 手动触发：按 Release target_commitish 读取正式版 versionCode
 name: 同步正式版到 LSPosed 官方仓库
 
 on:
@@ -41,16 +41,18 @@ jobs:
 
           RELEASE_JSON="$(gh api "repos/${SOURCE_REPO}/releases/latest")"
           SOURCE_TAG="$(jq -r '.tag_name' <<<"${RELEASE_JSON}")"
+          SOURCE_REF="$(jq -r '.target_commitish' <<<"${RELEASE_JSON}")"
           IS_DRAFT="$(jq -r '.draft' <<<"${RELEASE_JSON}")"
           IS_PRERELEASE="$(jq -r '.prerelease' <<<"${RELEASE_JSON}")"
 
           test "${IS_DRAFT}" = "false"
           test "${IS_PRERELEASE}" = "false"
+          test -n "${SOURCE_REF}"
           [[ "${SOURCE_TAG}" =~ ^v([0-9]+\.[0-9]+\.[0-9]+)$ ]]
           VERSION_NAME="${BASH_REMATCH[1]}"
 
           PROPERTIES="$(curl --fail --location --retry 3 \
-            "https://raw.githubusercontent.com/${SOURCE_REPO}/${SOURCE_TAG}/gradle.properties")"
+            "https://raw.githubusercontent.com/${SOURCE_REPO}/${SOURCE_REF}/gradle.properties")"
           VERSION_CODE="$(printf '%s\n' "${PROPERTIES}" |
             sed -n 's/^VERSION_CODE=\([0-9][0-9]*\)$/\1/p' |
             head -n 1)"
@@ -64,14 +66,14 @@ jobs:
 
           TAG="${VERSION_CODE}-${VERSION_NAME}"
           APK_NAME="WeType_Swipe_LSPosed_v${VERSION_NAME}.apk"
-          SUMS_NAME="$(gh api "repos/${SOURCE_REPO}/releases/tags/${SOURCE_TAG}" \
-            --jq '.assets[].name | select(endswith("_SHA256SUMS.txt"))' |
+          SUMS_NAME="$(jq -r '.assets[].name | select(endswith("_SHA256SUMS.txt"))' <<<"${RELEASE_JSON}" |
             head -n 1)"
 
           test -n "${SUMS_NAME}"
 
           {
             echo "SOURCE_TAG=${SOURCE_TAG}"
+            echo "SOURCE_REF=${SOURCE_REF}"
             echo "VERSION_CODE=${VERSION_CODE}"
             echo "VERSION_NAME=${VERSION_NAME}"
             echo "TAG=${TAG}"
